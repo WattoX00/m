@@ -99,6 +99,7 @@
             padding: 5px;
             z-index: 2;
         }
+
         .popup-content {
             padding: 15px;
         }
@@ -110,10 +111,39 @@
             font-size: 14px;
             color: #555;
         }
-        
+
+        .image-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(255, 255, 255, 0.3);
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 40px;
+            color: white;
+            cursor: pointer;
+        }
+
     </style>
 </head>
-<body>
+<body ondragstart="return false;" onselectstart="return false;" style="user-select: none; -webkit-user-drag: none;">
     <div class="map-container">
         <svg></svg>
     </div>
@@ -129,111 +159,136 @@
             <button onclick="closePopup()">Close</button>
         </div>
     </div>
+    <div id="image-modal" class="image-modal">
+        <span class="close-modal" onclick="closeImageModal()">&times;</span>
+        <img id="modal-image" class="modal-content">
+    </div>
+
     <script>
         const width = window.innerWidth * 1;
-const height = window.innerHeight * 1;
+        const height = window.innerHeight * 1;
 
-const svg = d3.select("svg")
-    .attr("width", width)
-    .attr("height", height);
+        const svg = d3.select("svg")
+            .attr("width", width)
+            .attr("height", height);
 
-const mapGroup = svg.append("g");
+        const mapGroup = svg.append("g");
 
-const projection = d3.geoNaturalEarth1()
-    .scale(width / 6.5)
-    .translate([width / 2, height / 2]);
+        const projection = d3.geoNaturalEarth1()
+            .scale(width / 6.5)
+            .translate([width / 2, height / 2]);
 
-const path = d3.geoPath().projection(projection);
+        const path = d3.geoPath().projection(projection);
 
-const zoom = d3.zoom()
-    .scaleExtent([1, 8])
-    .translateExtent([[0, 0], [width, height]])
-    .on("zoom", (event) => {
-        mapGroup.attr("transform", event.transform);
-    });
+        const zoom = d3.zoom()
+            .scaleExtent([1, 8])
+            .translateExtent([[0, 0], [width, height]])
+            .on("zoom", (event) => {
+                mapGroup.attr("transform", event.transform);
+            });
 
-svg.call(zoom);
+        svg.call(zoom);
 
-fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
-    .then(response => response.json())
-    .then(data => {
-        const countries = topojson.feature(data, data.objects.countries);
+        fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+            .then(response => response.json())
+            .then(data => {
+                const countries = topojson.feature(data, data.objects.countries);
 
-        mapGroup.selectAll(".country")
-            .data(countries.features)
-            .enter().append("path")
-            .attr("class", "country")
-            .attr("d", path)
-            .attr("fill", "#ccc")
-            .on("mouseover", function () { d3.select(this).attr("fill", "#888"); })
-            .on("mouseout", function () { d3.select(this).attr("fill", "#ccc"); })
-            .on("click", function (event, d) {
-                const countryName = d.properties.name;
-                
-                fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${countryName}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        document.getElementById("country-name").textContent = data.title;
-                        document.getElementById("located").textContent = data.description;
-                        document.getElementById("country-info").textContent = data.extract;
-                        document.getElementById("popup-flag").src = data.thumbnail ? data.thumbnail.source : "https://via.placeholder.com/50";
-
-                        openPopup();
-
-                        fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&titles=${countryName}&sites=enwiki&props=claims`)
+                mapGroup.selectAll(".country")
+                    .data(countries.features)
+                    .enter().append("path")
+                    .attr("class", "country")
+                    .attr("d", path)
+                    .attr("fill", "#ccc")
+                    .on("mouseover", function () { d3.select(this).attr("fill", "#888"); })
+                    .on("mouseout", function () { d3.select(this).attr("fill", "#ccc"); })
+                    .on("click", function (event, d) {
+                        const countryName = d.properties.name;
+                        
+                        fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${countryName}`)
                             .then(res => res.json())
-                            .then(wikidata => {
-                                const entityId = Object.keys(wikidata.entities)[0];
-                                const claims = wikidata.entities[entityId]?.claims;
-                                if (claims && claims.P36) {
-                                    const capitalId = claims.P36[0].mainsnak.datavalue.value.id;
-                                    
-                                    fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&ids=${capitalId}&props=sitelinks`)
-                                        .then(res => res.json())
-                                        .then(capitalData => {
-                                            const capitalName = capitalData.entities[capitalId]?.sitelinks?.enwiki?.title;
-                                            if (capitalName) {
-                                                fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${capitalName}`)
-                                                    .then(res => res.json())
-                                                    .then(capitalWiki => {
-                                                        if (capitalWiki.originalimage) {
-                                                            setPopupHeaderImage(capitalWiki.originalimage.source);
-                                                        }
-                                                    });
-                                            }
-                                        });
-                                }
+                            .then(data => {
+                                document.getElementById("country-name").textContent = data.title;
+                                document.getElementById("located").textContent = data.description;
+                                document.getElementById("country-info").textContent = data.extract;
+                                document.getElementById("popup-flag").src = data.thumbnail ? data.thumbnail.source : "https://via.placeholder.com/50";
+
+                                openPopup();
+
+                                fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&titles=${countryName}&sites=enwiki&props=claims`)
+                                    .then(res => res.json())
+                                    .then(wikidata => {
+                                        const entityId = Object.keys(wikidata.entities)[0];
+                                        const claims = wikidata.entities[entityId]?.claims;
+                                        if (claims && claims.P36) {
+                                            const capitalId = claims.P36[0].mainsnak.datavalue.value.id;
+                                            
+                                            fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&ids=${capitalId}&props=sitelinks`)
+                                                .then(res => res.json())
+                                                .then(capitalData => {
+                                                    const capitalName = capitalData.entities[capitalId]?.sitelinks?.enwiki?.title;
+                                                    if (capitalName) {
+                                                        fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${capitalName}`)
+                                                            .then(res => res.json())
+                                                            .then(capitalWiki => {
+                                                                if (capitalWiki.originalimage) {
+                                                                    setPopupHeaderImage(capitalWiki.originalimage.source);
+                                                                }
+                                                            });
+                                                    }
+                                                });
+                                        }
+                                    });
                             });
                     });
             });
-    });
 
-function openPopup() {
-    const popup = document.getElementById("popup");
-    popup.style.display = "block";
-    setTimeout(() => {
-        popup.style.opacity = "1";
-    }, 50);
-}
+        function openPopup() {
+            const popup = document.getElementById("popup");
+            popup.style.display = "block";
+            setTimeout(() => {
+                popup.style.opacity = "1";
+            }, 50);
+        }
 
-function closePopup() {
-    const popup = document.getElementById("popup");
-    popup.style.opacity = "0";
-    setTimeout(() => {
-        popup.style.display = "none";
-    }, 500);
-}
+        function closePopup() {
+            const popup = document.getElementById("popup");
+            popup.style.opacity = "0";
+            setTimeout(() => {
+                popup.style.display = "none";
+            }, 500);
+        }
+        function setPopupHeaderImage(imageUrl) {
+            const header = document.getElementById("popup-header");
+            const modalImage = document.getElementById("modal-image");
 
-function setPopupHeaderImage(imageUrl) {
-    const header = document.getElementById("popup-header");
+            header.style.backgroundImage = `url(${imageUrl})`;
+            modalImage.src = imageUrl;
 
-    header.style.filter = "blur(5px)";
+            header.onclick = function () {
+                document.getElementById("image-modal").style.display = "flex";
+            };
+        }
 
-    setTimeout(() => {
-        header.style.backgroundImage = `url(${imageUrl})`;
-        header.style.filter = "blur(0px)";
-    }, 300);
-}
+        function setPopupHeaderImage(imageUrl) {
+            const header = document.getElementById("popup-header");
+            const modalImage = document.getElementById("modal-image");
+            const imageModal = document.getElementById("image-modal");
+
+            if (!imageUrl) return;
+
+            header.style.backgroundImage = `url(${imageUrl})`;
+            modalImage.src = imageUrl;
+
+            header.onclick = function () {
+                imageModal.style.display = "flex";
+            };
+        }
+
+        function closeImageModal() {
+            document.getElementById("image-modal").style.display = "none";
+        }
+
 
     </script>
 </body>
