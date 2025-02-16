@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive World Map</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://unpkg.com/topojson-client@3"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #eef;
+        }
+        .map-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        .country:hover {
+            fill: rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+        }
+        .popup-header {
+            width: 100%;
+            height: 200px;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+            transition: background-image 0.5s ease-in-out, background-color 0.5s ease-in-out;
+            filter: blur(0px);
+        }
+
+        .popup-header::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, white 100%);
+        }
+
+        .popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60%;
+            max-width: 500px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+            display: none;
+            overflow: hidden;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .popup button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            border: none;
+            background: #007BFF;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0px 3px 6px rgba(0, 0, 0, 0.2);
+            transition: background 0.3s ease-in-out, transform 0.2s ease-in-out;
+        }
+
+        .popup button:hover {
+            background: #0056b3;
+            transform: scale(1.05);
+        }
+
+        .popup button:active {
+            transform: scale(0.95);
+        }
+
+        .popup-flag {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 50px;
+            height: auto;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            z-index: 2;
+        }
+        .popup-content {
+            padding: 15px;
+        }
+        .popup h2 {
+            font-size: 20px;
+            margin: 10px 0;
+        }
+        .popup p {
+            font-size: 14px;
+            color: #555;
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="map-container">
+        <svg></svg>
+    </div>
+    <div class="popup" id="popup">
+        <div class="popup-header" id="popup-header">
+            <img id="popup-flag" class="popup-flag" src="" alt="Country Flag">
+        </div>
+        <div class="popup-content">
+            <h2 id="country-name"></h2>
+            <h3 id="located"></h3>
+            <p id="country-info"></p>
+            <p id="country-name"></p>
+            <button onclick="closePopup()">Close</button>
+        </div>
+    </div>
+    <script>
+        const width = window.innerWidth * 1;
+const height = window.innerHeight * 1;
+
+const svg = d3.select("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+const mapGroup = svg.append("g");
+
+const projection = d3.geoNaturalEarth1()
+    .scale(width / 6.5)
+    .translate([width / 2, height / 2]);
+
+const path = d3.geoPath().projection(projection);
+
+const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .translateExtent([[0, 0], [width, height]])
+    .on("zoom", (event) => {
+        mapGroup.attr("transform", event.transform);
+    });
+
+svg.call(zoom);
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+    .then(response => response.json())
+    .then(data => {
+        const countries = topojson.feature(data, data.objects.countries);
+
+        mapGroup.selectAll(".country")
+            .data(countries.features)
+            .enter().append("path")
+            .attr("class", "country")
+            .attr("d", path)
+            .attr("fill", "#ccc")
+            .on("mouseover", function () { d3.select(this).attr("fill", "#888"); })
+            .on("mouseout", function () { d3.select(this).attr("fill", "#ccc"); })
+            .on("click", function (event, d) {
+                const countryName = d.properties.name;
+                
+                fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${countryName}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        document.getElementById("country-name").textContent = data.title;
+                        document.getElementById("located").textContent = data.description;
+                        document.getElementById("country-info").textContent = data.extract;
+                        document.getElementById("popup-flag").src = data.thumbnail ? data.thumbnail.source : "https://via.placeholder.com/50";
+
+                        openPopup();
+
+                        fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&titles=${countryName}&sites=enwiki&props=claims`)
+                            .then(res => res.json())
+                            .then(wikidata => {
+                                const entityId = Object.keys(wikidata.entities)[0];
+                                const claims = wikidata.entities[entityId]?.claims;
+                                if (claims && claims.P36) {
+                                    const capitalId = claims.P36[0].mainsnak.datavalue.value.id;
+                                    
+                                    fetch(`https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&ids=${capitalId}&props=sitelinks`)
+                                        .then(res => res.json())
+                                        .then(capitalData => {
+                                            const capitalName = capitalData.entities[capitalId]?.sitelinks?.enwiki?.title;
+                                            if (capitalName) {
+                                                fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${capitalName}`)
+                                                    .then(res => res.json())
+                                                    .then(capitalWiki => {
+                                                        if (capitalWiki.originalimage) {
+                                                            setPopupHeaderImage(capitalWiki.originalimage.source);
+                                                        }
+                                                    });
+                                            }
+                                        });
+                                }
+                            });
+                    });
+            });
+    });
+
+function openPopup() {
+    const popup = document.getElementById("popup");
+    popup.style.display = "block";
+    setTimeout(() => {
+        popup.style.opacity = "1";
+    }, 50);
+}
+
+function closePopup() {
+    const popup = document.getElementById("popup");
+    popup.style.opacity = "0";
+    setTimeout(() => {
+        popup.style.display = "none";
+    }, 500);
+}
+
+function setPopupHeaderImage(imageUrl) {
+    const header = document.getElementById("popup-header");
+
+    header.style.filter = "blur(5px)";
+
+    setTimeout(() => {
+        header.style.backgroundImage = `url(${imageUrl})`;
+        header.style.filter = "blur(0px)";
+    }, 300);
+}
+
+    </script>
+</body>
+</html>
